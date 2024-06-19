@@ -1,5 +1,6 @@
 from struct import unpack
 import math
+from PIL import Image
 
 marker_mapping = {
     0xFFD8: "Start of Image",
@@ -48,7 +49,7 @@ def DrawMatrix(x, y, matL, matCb, matCr):
     Loops over a single 8x8 MCU and draws it on Tkinter canvas
     """
     for yy in range(8):
-        for xx in range(8):
+        for xx in range(8): 
             c = "#%02x%02x%02x" % ColorConversion(
                 matL[yy][xx], matCb[yy][xx], matCr[yy][xx]
             )
@@ -348,6 +349,6 @@ if __name__ == "__main__":
     master = Tk()
     w = Canvas(master, width=1600, height=600)
     w.pack()
-    img = JPEG("profile.jpg")
+    img = JPEG("profile2.jpg")
     img.decode()
     mainloop()

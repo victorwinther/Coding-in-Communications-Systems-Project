@@ -1,6 +1,7 @@
 import numpy as np
 import imageio.v3 as iio
 import matplotlib.pyplot as plt
+import cv2
 
 def rgb_to_ycbcr(image):
     """
@@ -138,4 +139,15 @@ reconstructed_rgb_image = ycbcr_to_rgb(Y, Cb_subsampled, Cr_subsampled)
 # Display the reconstructed RGB image
 plt.imshow(reconstructed_rgb_image)
 plt.title("Reconstructed RGB Image")
+plt.show()
+
+plt.figure(figsize=(10, 3))
+
+plt.subplot(1, 2, 1)
+plt.imshow(reconstructed_rgb_image)
+plt.title("Reconstructed")
+
+plt.subplot(1, 2, 2)
+plt.imshow(cv2.cvtColor(image, cv2.COLOR_RGB2YCrCb))
+plt.title("Original")
 plt.show()

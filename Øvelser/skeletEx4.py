@@ -3,7 +3,7 @@ import imageio.v3 as iio
 import matplotlib.pyplot as plt
 from scipy.fftpack import dct, idct, dctn, idctn
 from skimage.util import apply_parallel
-from jpeg_compression_cycle import jpeg_compression_cycle
+from Øvelser.jpeg_compression_cycle import jpeg_compression_cycle
 
 def Entropy(im):
     histogram, bin_edges = np.histogram(im, bins=range(256))

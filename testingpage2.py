@@ -2,6 +2,7 @@ import numpy as np
 import imageio.v3 as iio
 import matplotlib.pyplot as plt
 import cv2
+import scipy.fftpack
 
 def rgb_to_ycbcr(image):
     """
@@ -141,13 +142,84 @@ plt.imshow(reconstructed_rgb_image)
 plt.title("Reconstructed RGB Image")
 plt.show()
 
-plt.figure(figsize=(10, 3))
+# Convert using your function
+Y, Cb, Cr = rgb_to_ycbcr(image)
+
+# Convert using OpenCV
+image_ycbcr = cv2.cvtColor(image, cv2.COLOR_RGB2YCrCb)
+Y_cv = image_ycbcr[:, :, 0]
+Cb_cv = image_ycbcr[:, :, 1]
+Cr_cv = image_ycbcr[:, :, 2]
+
+# Plot the results for comparison
+plt.figure(figsize=(15, 5))
+
+plt.subplot(2, 3, 1)
+plt.imshow(Y, cmap='gray')
+plt.title("Y Component (Custom)")
+
+plt.subplot(2, 3, 2)
+plt.imshow(Cb, cmap='gray')
+plt.title("Cb Component (Custom)")
+
+plt.subplot(2, 3, 3)
+plt.imshow(Cr, cmap='gray')
+plt.title("Cr Component (Custom)")
+
+plt.subplot(2, 3, 4)
+plt.imshow(Y_cv, cmap='gray')
+plt.title("Y Component (OpenCV)")
+
+plt.subplot(2, 3, 5)
+plt.imshow(Cb_cv, cmap='gray')
+plt.title("Cb Component (OpenCV)")
+
+plt.subplot(2, 3, 6)
+plt.imshow(Cr_cv, cmap='gray')
+plt.title("Cr Component (OpenCV)")
+
+plt.show()
+
+# Subsample using your function
+Cb_subsampled, Cr_subsampled = apply_420_subsampling(Cb, Cr)
+
+# Subsample using OpenCV (4:2:0 subsampling)
+Cb_subsampled_cv = Cb_cv[::2, ::2]
+Cr_subsampled_cv = Cr_cv[::2, ::2]
+
+# Plot the results for comparison
+plt.figure(figsize=(15, 5))
+
+plt.subplot(2, 2, 1)
+plt.imshow(Cb_subsampled, cmap='gray')
+plt.title("Subsampled Cb (Custom)")
+
+plt.subplot(2, 2, 2)
+plt.imshow(Cr_subsampled, cmap='gray')
+plt.title("Subsampled Cr (Custom)")
+
+plt.subplot(2, 2, 3)
+plt.imshow(Cb_subsampled_cv, cmap='gray')
+plt.title("Subsampled Cb (OpenCV)")
+
+plt.subplot(2, 2, 4)
+plt.imshow(Cr_subsampled_cv, cmap='gray')
+plt.title("Subsampled Cr (OpenCV)")
+
+plt.show()
+
+# Convert YCbCr components back to RGB
+reconstructed_rgb_image = ycbcr_to_rgb(Y, Cb_subsampled, Cr_subsampled)
+
+# Plot the reconstructed image and original image
+plt.figure(figsize=(15, 5))
 
 plt.subplot(1, 2, 1)
 plt.imshow(reconstructed_rgb_image)
-plt.title("Reconstructed")
+plt.title("Reconstructed RGB Image (Custom)")
 
 plt.subplot(1, 2, 2)
-plt.imshow(cv2.cvtColor(image, cv2.COLOR_RGB2YCrCb))
-plt.title("Original")
+plt.imshow(image)
+plt.title("Original RGB Image")
+
 plt.show()

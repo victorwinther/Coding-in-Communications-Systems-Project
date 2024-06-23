@@ -100,7 +100,7 @@ def PSNR(im1, im2):
     return psnr
 
 # Indlæs billede
-imParrots = iio.imread('pictures/parrots.bmp')
+imParrots = iio.imread('pictures/I25.png')
 
 # Parametre for kvantiseringsfaktorer
 quant_factors = [10, 30, 50, 75]
@@ -110,6 +110,9 @@ entropies = []
 # Kør JPEG kompression for forskellige kvantiseringsfaktorer
 for qf in quant_factors:
     comp, bitstream = jpeg_compression_cycle(imParrots, qf)
+    plt.imshow(comp)
+    plt.title(f'JPEG Compression with QF={qf}')
+    plt.show()
     psnrs.append(PSNR(imParrots, comp))
     entropies.append(calculate_entropy(bitstream))
 

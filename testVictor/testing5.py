@@ -490,45 +490,20 @@ def test_huffman_coding(image_path):
 
     Y, Cb, Cr = rgb_to_ycbcr(image)
     Cb_subsampled, Cr_subsampled = apply_420_subsampling(Cb, Cr)
-    print(Y.shape)
-    print(Cb_subsampled.shape)
-    print(Cr_subsampled.shape)
     scaled_luminance, scaled_chrominance = scale_quantization_matrices(qf, quant_table_luminance, quant_table_chrominance)
     Y_dct = block_process(Y, 8, dct2d_library, scaled_luminance)
     Cb_dct = block_process(Cb_subsampled, 8, dct2d_library, scaled_chrominance)
     Cr_dct = block_process(Cr_subsampled, 8, dct2d_library, scaled_chrominance)
 
-    print(Y_dct.shape)
-    print(Cb_dct.shape)
-    print(Cr_dct.shape)
-
-    # Apply zigzag scanning and run-length encoding to each block
-    Y_zigzag = np.array([zigzag_scan(block) for block in Y_dct.reshape(-1, 8, 8)])
-    Cb_zigzag = np.array([zigzag_scan(block) for block in Cb_dct.reshape(-1, 8, 8)])
-    Cr_zigzag = np.array([zigzag_scan(block) for block in Cr_dct.reshape(-1, 8, 8)])
-
-    Y_rle = run_length_encode(Y_zigzag.flatten())
-    Cb_rle = run_length_encode(Cb_zigzag.flatten())
-    Cr_rle = run_length_encode(Cr_zigzag.flatten())
-
-    all_dct_coeffs = np.concatenate((Y_rle, Cb_rle, Cr_rle))
-
-    #all_dct_coeffs = np.concatenate((Y_dct.flatten(), Cb_dct.flatten(), Cr_dct.flatten())).astype(int)
+    all_dct_coeffs = np.concatenate((Y_dct.flatten(), Cb_dct.flatten(), Cr_dct.flatten())).astype(int)
     encoded_data, huff_dict = huffman_encode(all_dct_coeffs)
     decoded_data = huffman_decode(encoded_data, huff_dict)
 
-    Y_blocks = np.array([zigzag_decode(block) for block in Y_rle.reshape(-1, 64)])
-    Cb_blocks = np.array([zigzag_decode(block) for block in Cb_rle.reshape(-1, 64)])
-    Cr_blocks = np.array([zigzag_decode(block) for block in Cr_rle.reshape(-1, 64)])
 
-    #Y_decoded, Cb_decoded, Cr_decoded = reshape_decoded_data(decoded_data, Y_dct.shape, Cb_dct.shape, Cr_dct.shape)
-    #Y_reconstructed = block_process_inverse(Y_decoded, 8, idct2d_library, scaled_luminance)
-    #Cb_reconstructed = block_process_inverse(Cb_decoded, 8, idct2d_library, scaled_chrominance)
-    #Cr_reconstructed = block_process_inverse(Cr_decoded, 8, idct2d_library, scaled_chrominance)
-
-    Y_reconstructed = block_process_inverse(Y_blocks, 8, idct2d_library, scaled_luminance)
-    Cb_reconstructed = block_process_inverse(Cb_blocks, 8, idct2d_library, scaled_chrominance)
-    Cr_reconstructed = block_process_inverse(Cr_blocks, 8, idct2d_library, scaled_chrominance)
+    Y_decoded, Cb_decoded, Cr_decoded = reshape_decoded_data(decoded_data, Y_dct.shape, Cb_dct.shape, Cr_dct.shape)
+    Y_reconstructed = block_process_inverse(Y_decoded, 8, idct2d_library, scaled_luminance)
+    Cb_reconstructed = block_process_inverse(Cb_decoded, 8, idct2d_library, scaled_chrominance)
+    Cr_reconstructed = block_process_inverse(Cr_decoded, 8, idct2d_library, scaled_chrominance)
     reconstructed_rgb_image = ycbcr_to_rgb(Y_reconstructed, Cb_reconstructed, Cr_reconstructed)   
     # Encoded data size
     encoded_size = len(encoded_data)  # in bits

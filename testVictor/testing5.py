@@ -23,18 +23,42 @@ def apply_420_subsampling(Cb, Cr):
     Cr_subsampled = Cr[::2, ::2]
     return Cb_subsampled, Cr_subsampled
 
+
 def ycbcr_to_rgb(Y, Cb_subsampled, Cr_subsampled):
+    # Ensure inputs are in floating point
+    Y = Y.astype(np.float32)
+    Cb_subsampled = Cb_subsampled.astype(np.float32)
+    Cr_subsampled = Cr_subsampled.astype(np.float32)
+
     height, width = Y.shape
     Cb_upsampled = np.repeat(np.repeat(Cb_subsampled, 2, axis=0), 2, axis=1)
     Cr_upsampled = np.repeat(np.repeat(Cr_subsampled, 2, axis=0), 2, axis=1)
+    Cb_upsampled = Cb_upsampled[:height, :width]
+    Cr_upsampled = Cr_upsampled[:height, :width]
+
     R = Y + 1.402 * (Cr_upsampled - 128)
     G = Y - 0.344136 * (Cb_upsampled - 128) - 0.714136 * (Cr_upsampled - 128)
     B = Y + 1.772 * (Cb_upsampled - 128)
+
     rgb_image = np.stack((R, G, B), axis=-1)
     rgb_image = np.clip(rgb_image, 0, 255)
     rgb_image = np.uint8(rgb_image)
     rgb_image_pil = Image.fromarray(rgb_image)
+
     return rgb_image_pil
+
+def ycbcr_to_rgb_test(Y, Cb, Cr):
+    Y = Y.astype(np.float32)
+    Cb = Cb.astype(np.float32)
+    Cr = Cr.astype(np.float32)
+    
+    R = Y + 1.402 * (Cr - 128)
+    G = Y - 0.344136 * (Cb - 128) - 0.714136 * (Cr - 128)
+    B = Y + 1.772 * (Cb - 128)
+
+    rgb_image = np.stack((R, G, B), axis=-1)
+    rgb_image = np.clip(rgb_image, 0, 255).astype(np.uint8)
+    return rgb_image
 
 def scale_quantization_matrices(qf, quant_table_luminance, quant_table_chrominance):
     if qf < 50:
@@ -80,6 +104,53 @@ def block_process_inverse(channel, block_size, process_block, quant_matrix):
     return (processed_blocks.reshape(h // block_size, w // block_size, block_size, block_size)
                             .swapaxes(1, 2)
                             .reshape(h, w))
+
+def zigzag_scan(block):
+    zigzag_index = np.array([
+        [0, 1, 5, 6, 14, 15, 27, 28],
+        [2, 4, 7, 13, 16, 26, 29, 42],
+        [3, 8, 12, 17, 25, 30, 41, 43],
+        [9, 11, 18, 24, 31, 40, 44, 53],
+        [10, 19, 23, 32, 39, 45, 52, 54],
+        [20, 22, 33, 38, 46, 51, 55, 60],
+        [21, 34, 37, 47, 50, 56, 59, 61],
+        [35, 36, 48, 49, 57, 58, 62, 63]
+    ]).flatten()
+    return block.flatten()[zigzag_index]
+
+def run_length_encode(arr):
+    result = []
+    count = 1
+    for i in range(1, len(arr)):
+        if arr[i] == arr[i - 1]:
+            count += 1
+        else:
+            result.append((arr[i - 1], count))
+            count = 1
+    result.append((arr[-1], count))
+    return result
+
+def run_length_decode(rle):
+    result = []
+    for value, count in rle:
+        result.extend([value] * count)
+    return np.array(result)
+
+def zigzag_decode(arr):
+    zigzag_index = np.array([
+        [0, 1, 5, 6, 14, 15, 27, 28],
+        [2, 4, 7, 13, 16, 26, 29, 42],
+        [3, 8, 12, 17, 25, 30, 41, 43],
+        [9, 11, 18, 24, 31, 40, 44, 53],
+        [10, 19, 23, 32, 39, 45, 52, 54],
+        [20, 22, 33, 38, 46, 51, 55, 60],
+        [21, 34, 37, 47, 50, 56, 59, 61],
+        [35, 36, 48, 49, 57, 58, 62, 63]
+    ]).flatten()
+    block = np.zeros((8, 8))
+    block.flatten()[zigzag_index] = arr
+    return block
+
 
 class HuffmanNode:
     def __init__(self, symbol, freq):
@@ -139,6 +210,8 @@ def reshape_decoded_data(decoded_data, Y_shape, Cb_shape, Cr_shape):
     Y_decoded = decoded_data[:Y_size].reshape(Y_shape)
     Cb_decoded = decoded_data[Y_size:Y_size + Cb_size].reshape(Cb_shape)
     Cr_decoded = decoded_data[Y_size + Cb_size:].reshape(Cr_shape)
+
+    
     return Y_decoded, Cb_decoded, Cr_decoded
 
 def Entropy(im):
@@ -255,12 +328,249 @@ plt.ylabel('PSNR (dB)')
 plt.grid(True)
 plt.show()
 '''
-
 # Definer kvantiseringsfaktoren
-qf = 90  # Du kan justere denne værdi mellem 0 og 100
+qf = 100 # Du kan justere denne værdi mellem 0 og 100
 
 # Komprimer billedet og få rekonstrueret billede og kodet data
 reconstructed_image, encoded_data = jpeg_compression('pictures/parrots.bmp', qf)
+original_image = iio.imread('pictures/parrots.bmp')
+ 
+# Display the original and reconstructed images
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.imshow(original_image)
+plt.title('Original Image')
+plt.axis('off')
+
+plt.subplot(1, 2, 2)
+plt.imshow(reconstructed_image)
+plt.title('Reconstructed Image')
+plt.axis('off')
+
+plt.show()
 
 # Udskriv statistik
 print_statistics('pictures/parrots.bmp', reconstructed_image, encoded_data)
+def test_color_transformation(image_path):
+    # Load the image
+    #original_image = Image.open(image_path).convert('RGB')
+    original_image = iio.imread(image_path)
+    # Convert RGB to YCbCr
+    Y, Cb, Cr = rgb_to_ycbcr(original_image)
+    
+    # Convert YCbCr back to RGB
+    reconstructed_image = ycbcr_to_rgb_test(Y, Cb, Cr)
+    
+    # Convert images to numpy arrays for MSE and PSNR calculation
+    original_image_array = np.array(original_image)
+    reconstructed_image_array = np.array(reconstructed_image)
+    
+    # Calculate MSE and PSNR
+    mse_value = MSE(original_image_array, reconstructed_image_array)
+    psnr_value = PSNR(original_image_array, reconstructed_image_array)
+    
+    # Display the original and reconstructed images
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    plt.imshow(original_image)
+    plt.title('Original Image')
+    plt.axis('off')
+    
+    plt.subplot(1, 2, 2)
+    plt.imshow(reconstructed_image)
+    plt.title('Reconstructed Image')
+    plt.axis('off')
+    
+    plt.show()
+    
+    # Print MSE and PSNR values
+    print(f'MSE: {mse_value:.4f}')
+    print(f'PSNR: {psnr_value:.2f} dB')
+
+# Example usage
+#test_color_transformation('pictures/I25.png')
+
+def test_subsampling(image_path):
+    # Load the image
+    #original_image = Image.open(image_path).convert('RGB')
+    original_image = iio.imread(image_path)
+    # Convert RGB to YCbCr
+    Y, Cb, Cr = rgb_to_ycbcr(original_image)
+
+    Cb_subsampled, Cr_subsampled = apply_420_subsampling(Cb, Cr)
+    reconstructed_image = ycbcr_to_rgb(Y, Cb_subsampled, Cr_subsampled)
+    
+    # Convert images to numpy arrays for MSE and PSNR calculation
+    original_image_array = np.array(original_image)
+    reconstructed_image_array = np.array(reconstructed_image)
+    
+    # Calculate MSE and PSNR
+    mse_value = MSE(original_image_array, reconstructed_image_array)
+    psnr_value = PSNR(original_image_array, reconstructed_image_array)
+    
+    # Display the original and reconstructed images
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    plt.imshow(original_image)
+    plt.title('Original Image')
+    plt.axis('off')
+    
+    plt.subplot(1, 2, 2)
+    plt.imshow(reconstructed_image)
+    plt.title('Reconstructed Image')
+    plt.axis('off')
+    
+    plt.show()
+    
+    # Print MSE and PSNR values
+    print(f'MSE: {mse_value:.4f}')
+    print(f'PSNR: {psnr_value:.2f} dB')
+#test_subsampling('pictures/I25.png')    
+
+def test_DCT(image_path):
+    # Load the image
+    #original_image = Image.open(image_path).convert('RGB')
+    original_image = iio.imread(image_path)
+    # Convert RGB to YCbCr
+    Y, Cb, Cr = rgb_to_ycbcr(original_image)
+
+    Cb_subsampled, Cr_subsampled = apply_420_subsampling(Cb, Cr)
+    scaled_luminance, scaled_chrominance = scale_quantization_matrices(100, quant_table_luminance, quant_table_chrominance)
+    Y_dct = block_process(Y, 8, dct2d_library, scaled_luminance)
+    Cb_dct = block_process(Cb_subsampled, 8, dct2d_library, scaled_chrominance)
+    Cr_dct = block_process(Cr_subsampled, 8, dct2d_library, scaled_chrominance)
+    all_dct_coeffs = np.concatenate((Y_dct.flatten(), Cb_dct.flatten(), Cr_dct.flatten())).astype(int)
+
+    Y_decoded, Cb_decoded, Cr_decoded = reshape_decoded_data(all_dct_coeffs, Y_dct.shape, Cb_dct.shape, Cr_dct.shape)
+    Y_reconstructed = block_process_inverse(Y_decoded, 8, idct2d_library, scaled_luminance)
+    Cb_reconstructed = block_process_inverse(Cb_decoded, 8, idct2d_library, scaled_chrominance)
+    Cr_reconstructed = block_process_inverse(Cr_decoded, 8, idct2d_library, scaled_chrominance)
+    reconstructed_image = ycbcr_to_rgb(Y_reconstructed, Cb_reconstructed, Cr_reconstructed)
+    
+    
+    # Convert images to numpy arrays for MSE and PSNR calculation
+    original_image_array = np.array(original_image)
+    reconstructed_image_array = np.array(reconstructed_image)
+    
+    # Calculate MSE and PSNR
+    mse_value = MSE(original_image_array, reconstructed_image_array)
+    psnr_value = PSNR(original_image_array, reconstructed_image_array)
+    
+    # Display the original and reconstructed images
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    plt.imshow(original_image)
+    plt.title('Original Image')
+    plt.axis('off')
+    
+    plt.subplot(1, 2, 2)
+    plt.imshow(reconstructed_image)
+    plt.title('Reconstructed Image')
+    plt.axis('off')
+    
+    plt.show()
+    
+    # Print MSE and PSNR values
+    print(f'MSE: {mse_value:.4f}')
+    print(f'PSNR: {psnr_value:.2f} dB')
+#test_DCT('pictures/I25.png')    
+
+
+def test_huffman_coding(image_path):
+    # Load the image and convert it to grayscale for simplicity
+    image = iio.imread(image_path)
+    image_array = np.array(image)
+
+    # Flatten the image array for Huffman encoding
+    flattened_image = image_array.flatten()
+
+    # Original data size
+    original_size = flattened_image.size * flattened_image.itemsize * 8  # in bits
+
+
+    Y, Cb, Cr = rgb_to_ycbcr(image)
+    Cb_subsampled, Cr_subsampled = apply_420_subsampling(Cb, Cr)
+    print(Y.shape)
+    print(Cb_subsampled.shape)
+    print(Cr_subsampled.shape)
+    scaled_luminance, scaled_chrominance = scale_quantization_matrices(qf, quant_table_luminance, quant_table_chrominance)
+    Y_dct = block_process(Y, 8, dct2d_library, scaled_luminance)
+    Cb_dct = block_process(Cb_subsampled, 8, dct2d_library, scaled_chrominance)
+    Cr_dct = block_process(Cr_subsampled, 8, dct2d_library, scaled_chrominance)
+
+    print(Y_dct.shape)
+    print(Cb_dct.shape)
+    print(Cr_dct.shape)
+
+    # Apply zigzag scanning and run-length encoding to each block
+    Y_zigzag = np.array([zigzag_scan(block) for block in Y_dct.reshape(-1, 8, 8)])
+    Cb_zigzag = np.array([zigzag_scan(block) for block in Cb_dct.reshape(-1, 8, 8)])
+    Cr_zigzag = np.array([zigzag_scan(block) for block in Cr_dct.reshape(-1, 8, 8)])
+
+    Y_rle = run_length_encode(Y_zigzag.flatten())
+    Cb_rle = run_length_encode(Cb_zigzag.flatten())
+    Cr_rle = run_length_encode(Cr_zigzag.flatten())
+
+    all_dct_coeffs = np.concatenate((Y_rle, Cb_rle, Cr_rle))
+
+    #all_dct_coeffs = np.concatenate((Y_dct.flatten(), Cb_dct.flatten(), Cr_dct.flatten())).astype(int)
+    encoded_data, huff_dict = huffman_encode(all_dct_coeffs)
+    decoded_data = huffman_decode(encoded_data, huff_dict)
+
+    Y_blocks = np.array([zigzag_decode(block) for block in Y_rle.reshape(-1, 64)])
+    Cb_blocks = np.array([zigzag_decode(block) for block in Cb_rle.reshape(-1, 64)])
+    Cr_blocks = np.array([zigzag_decode(block) for block in Cr_rle.reshape(-1, 64)])
+
+    #Y_decoded, Cb_decoded, Cr_decoded = reshape_decoded_data(decoded_data, Y_dct.shape, Cb_dct.shape, Cr_dct.shape)
+    #Y_reconstructed = block_process_inverse(Y_decoded, 8, idct2d_library, scaled_luminance)
+    #Cb_reconstructed = block_process_inverse(Cb_decoded, 8, idct2d_library, scaled_chrominance)
+    #Cr_reconstructed = block_process_inverse(Cr_decoded, 8, idct2d_library, scaled_chrominance)
+
+    Y_reconstructed = block_process_inverse(Y_blocks, 8, idct2d_library, scaled_luminance)
+    Cb_reconstructed = block_process_inverse(Cb_blocks, 8, idct2d_library, scaled_chrominance)
+    Cr_reconstructed = block_process_inverse(Cr_blocks, 8, idct2d_library, scaled_chrominance)
+    reconstructed_rgb_image = ycbcr_to_rgb(Y_reconstructed, Cb_reconstructed, Cr_reconstructed)   
+    # Encoded data size
+    encoded_size = len(encoded_data)  # in bits
+    
+    # Reshape decoded data to original shape
+    decoded_image_array = np.array(reconstructed_rgb_image)
+    # Check bitwise accuracy
+
+    Y1_decoded, Cb1_decoded, Cr1_decoded = reshape_decoded_data(all_dct_coeffs, Y_dct.shape, Cb_dct.shape, Cr_dct.shape)
+    Y1_reconstructed = block_process_inverse(Y1_decoded, 8, idct2d_library, scaled_luminance)
+    Cb1_reconstructed = block_process_inverse(Cb1_decoded, 8, idct2d_library, scaled_chrominance)
+    Cr1_reconstructed = block_process_inverse(Cr1_decoded, 8, idct2d_library, scaled_chrominance)
+    reconstructed_rgb_image1 = ycbcr_to_rgb(Y1_reconstructed, Cb1_reconstructed, Cr1_reconstructed)
+
+    bitwise_accuracy = np.array_equal(np.array(reconstructed_rgb_image1), decoded_image_array)
+    # Calculate size after decoding
+    decoded_size = decoded_image_array.size * decoded_image_array.itemsize * 8  # in bits
+
+    # Display sizes and bitwise accuracy
+    print(f'Original size: {original_size} bits')
+    print(f'Encoded size: {encoded_size} bits')
+    print(f'Decoded size: {decoded_size} bits')
+    print(f'Bitwise accuracy: {"Pass" if bitwise_accuracy else "Fail"}')
+    #print compression
+    print(f'Compression ratio: {original_size / encoded_size:.2f}')
+
+    # Display original and decoded images for visual inspection
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    plt.imshow(image_array, cmap='gray')
+    plt.title('Original Image')
+    plt.axis('off')
+
+    plt.subplot(1, 2, 2)
+    plt.imshow(decoded_image_array, cmap='gray')
+    plt.title('Decoded Image')
+    plt.axis('off')
+
+    plt.show()
+
+# Example usage
+test_huffman_coding('pictures/parrots.bmp')
+
+
+

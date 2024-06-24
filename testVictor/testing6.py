@@ -330,7 +330,7 @@ plt.grid(True)
 plt.show()
 
 # Define quantization factor
-qf = 50  # You can adjust this value between 0 and 100
+qf = 100  # You can adjust this value between 0 and 100
 
 # Compress image and get reconstructed image and encoded data
 reconstructed_image, encoded_data = jpeg_compression('sample.bmp', qf)

@@ -105,6 +105,41 @@ def block_process_inverse(channel, block_size, process_block, quant_matrix):
                             .swapaxes(1, 2)
                             .reshape(h, w))
 
+def dct2d_manual(block):
+    N = block.shape[0]
+    dct_matrix = np.zeros((N, N))
+
+    def alpha(u):
+        return np.sqrt(1/2) if u == 0 else 1
+
+    for u in range(N):
+        for v in range(N):
+            sum_value = 0.0
+            for x in range(N):
+                for y in range(N):
+                    sum_value += block[x, y] * np.cos((2 * x + 1) * u * np.pi / (2 * N)) * np.cos((2 * y + 1) * v * np.pi / (2 * N))
+            dct_matrix[u, v] = 0.25 * alpha(u) * alpha(v) * sum_value
+
+    return dct_matrix
+
+def idct2d_manual(block):
+    N = block.shape[0]
+    idct_matrix = np.zeros((N, N))
+
+    def alpha(u):
+        return np.sqrt(1/2) if u == 0 else 1
+
+    for x in range(N):
+        for y in range(N):
+            sum_value = 0.0
+            for u in range(N):
+                for v in range(N):
+                    sum_value += alpha(u) * alpha(v) * block[u, v] * np.cos((2 * x + 1) * u * np.pi / (2 * N)) * np.cos((2 * y + 1) * v * np.pi / (2 * N))
+            idct_matrix[x, y] = 0.25 * sum_value
+
+    return idct_matrix
+
+
 def zigzag_scan(block):
     zigzag_index = np.array([
         [0, 1, 5, 6, 14, 15, 27, 28],
@@ -271,7 +306,6 @@ def print_statistics(image_path, reconstructed_image, encoded_data):
     print(f"Original BMP-fil størrelse: {original_file_size / 1024:.2f} KB")
     encoded_data_size = len(encoded_data) / 8
     print(f"Huffman-kodet data størrelse: {encoded_data_size / 1024:.2f} KB")
-    reconstructed_image.save("reconstructed_image.jpg", "JPEG", quality=95)
     print("Det rekonstruerede billede er gemt som 'reconstructed_image.jpg'")
     reconstructed_image.save("reconstructed_image.png", "PNG")
     print("Det rekonstruerede billede er gemt som 'reconstructed_image.png'")
@@ -301,15 +335,31 @@ quant_table_chrominance = np.array([
     [99, 99, 99, 99, 99, 99, 99, 99],
     [99, 99, 99, 99, 99, 99, 99, 99]
 ])
+
+def calculate_entropy(bitstream):
+    # Convert the bitstream (string) into a list of bits
+    bit_array = list(bitstream)
+    
+    # Count the frequency of each bit (0 and 1)
+    freq = Counter(bit_array)
+    
+    # Calculate probabilities
+    total_bits = len(bit_array)
+    probabilities = [freq[bit] / total_bits for bit in freq]
+    
+    # Calculate entropy
+    entropy = -sum(p * np.log2(p) for p in probabilities if p > 0)
+    return entropy
+
 # Definer kvantiseringsfaktorer
-quant_factors = [10, 30, 50, 75]
+quant_factors = [10,30, 50, 75,100]
 
 # Gem resultater for PSNR og entropi
 psnrs = []
 entropies = []
 
 # Kør JPEG kompression for forskellige kvantiseringsfaktorer
-'''
+
 for qf in quant_factors:
     reconstructed_image, encoded_data = jpeg_compression('pictures/parrots.bmp', qf)
     #plt.imshow(reconstructed_image)
@@ -317,7 +367,7 @@ for qf in quant_factors:
     #plt.show()
     image = iio.imread('pictures/parrots.bmp')
     psnrs.append(PSNR(image, np.array(reconstructed_image)))
-    entropies.append(Entropy(reconstructed_image))
+    entropies.append(calculate_entropy(encoded_data))
 
 # Lav rate-distortion plot
 plt.figure(figsize=(10, 6))
@@ -327,7 +377,7 @@ plt.xlabel('Entropy (bits/pixel)')
 plt.ylabel('PSNR (dB)')
 plt.grid(True)
 plt.show()
-'''
+
 # Definer kvantiseringsfaktoren
 qf = 100 # Du kan justere denne værdi mellem 0 og 100
 
@@ -491,9 +541,9 @@ def test_huffman_coding(image_path):
     Y, Cb, Cr = rgb_to_ycbcr(image)
     Cb_subsampled, Cr_subsampled = apply_420_subsampling(Cb, Cr)
     scaled_luminance, scaled_chrominance = scale_quantization_matrices(qf, quant_table_luminance, quant_table_chrominance)
-    Y_dct = block_process(Y, 8, dct2d_library, scaled_luminance)
-    Cb_dct = block_process(Cb_subsampled, 8, dct2d_library, scaled_chrominance)
-    Cr_dct = block_process(Cr_subsampled, 8, dct2d_library, scaled_chrominance)
+    Y_dct = block_process(Y, 8, dct2d_manual, scaled_luminance)
+    Cb_dct = block_process(Cb_subsampled, 8, dct2d_manual, scaled_chrominance)
+    Cr_dct = block_process(Cr_subsampled, 8, dct2d_manual, scaled_chrominance)
 
     all_dct_coeffs = np.concatenate((Y_dct.flatten(), Cb_dct.flatten(), Cr_dct.flatten())).astype(int)
     encoded_data, huff_dict = huffman_encode(all_dct_coeffs)
@@ -501,9 +551,9 @@ def test_huffman_coding(image_path):
 
 
     Y_decoded, Cb_decoded, Cr_decoded = reshape_decoded_data(decoded_data, Y_dct.shape, Cb_dct.shape, Cr_dct.shape)
-    Y_reconstructed = block_process_inverse(Y_decoded, 8, idct2d_library, scaled_luminance)
-    Cb_reconstructed = block_process_inverse(Cb_decoded, 8, idct2d_library, scaled_chrominance)
-    Cr_reconstructed = block_process_inverse(Cr_decoded, 8, idct2d_library, scaled_chrominance)
+    Y_reconstructed = block_process_inverse(Y_decoded, 8, idct2d_manual, scaled_luminance)
+    Cb_reconstructed = block_process_inverse(Cb_decoded, 8, idct2d_manual, scaled_chrominance)
+    Cr_reconstructed = block_process_inverse(Cr_decoded, 8, idct2d_manual, scaled_chrominance)
     reconstructed_rgb_image = ycbcr_to_rgb(Y_reconstructed, Cb_reconstructed, Cr_reconstructed)   
     # Encoded data size
     encoded_size = len(encoded_data)  # in bits
@@ -545,7 +595,106 @@ def test_huffman_coding(image_path):
     plt.show()
 
 # Example usage
-test_huffman_coding('pictures/parrots.bmp')
+#test_huffman_coding('pictures/parrots.bmp')
 
 
+
+import numpy as np
+import cv2
+import os
+from PIL import Image
+
+def convert_to_jpg(image_path, output_path, quality=95):
+    # Load image using PIL
+    image = Image.open(image_path)
+    # Save image with specified JPEG quality
+    image.save(output_path, 'JPEG', quality=quality)
+
+def calculate_psnr(original_image, compressed_image):
+    # Calculate MSE first
+    mse = np.mean((original_image - compressed_image) ** 2)
+    if mse == 0:
+        return float('inf')
+    # Calculate PSNR
+    max_pixel = 255.0
+    psnr = 20 * np.log10(max_pixel / np.sqrt(mse))
+    return psnr
+
+def test_jpg_conversion(image_path, quality_levels):
+    original_image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    psnrs = []
+    sizes = []
+    for quality in quality_levels:
+        # Define output path for the compressed image
+        output_path = f'compressed_quality_{quality}.jpg'
+        # Convert to JPG
+        convert_to_jpg(image_path, output_path, quality=quality)
+        # Read the compressed image
+        compressed_image = cv2.imread(output_path, cv2.IMREAD_UNCHANGED)
+        # Calculate PSNR
+        psnr = calculate_psnr(original_image, compressed_image)
+        psnrs.append(psnr)
+        # Get file size
+        file_size = os.path.getsize(output_path)
+        sizes.append(file_size)
+        # Optionally delete the file to save space
+        os.remove(output_path)
+        print(f'PSNR for quality {quality}: {psnr:.2f} dB, Size: {file_size} bytes')
+    return psnrs, sizes
+
+# Example usage
+quality_levels = [10, 30, 50, 70, 90, 100]
+psnrs, sizes = test_jpg_conversion('pictures/parrots.bmp', quality_levels)
+
+import numpy as np
+import os
+import cv2
+from PIL import Image
+
+# Assuming jpeg_compression and auxiliary functions are already defined elsewhere in your code.
+
+def test_custom_jpeg_compression(image_path, quality_levels):
+    original_image = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)  # Convert to RGB for consistency with PIL
+
+    psnrs = []
+    sizes = []
+
+    for quality in quality_levels:
+        # Compress the image using your custom method
+        reconstructed_image, encoded_data = jpeg_compression(image_path, quality)
+        
+        # Save the reconstructed image to measure file size
+        output_path = f'custom_compressed_quality_{quality}.png'
+        reconstructed_image.save(output_path, 'PNG')  # Save as PNG to avoid additional JPEG compression
+        encoded_data_size = len(encoded_data) / 8
+        print(f"Huffman-kodet data størrelse: {encoded_data_size / 1024:.2f} KB")
+        
+        # Calculate PSNR
+        reconstructed_image_array = np.array(reconstructed_image)
+        psnr = calculate_psnr(original_image, reconstructed_image_array)
+        psnrs.append(psnr)
+        
+        # Get file size
+        file_size = os.path.getsize(output_path)
+        sizes.append(file_size)
+        
+        # Optionally delete the file to save space
+        os.remove(output_path)
+        
+        print(f'PSNR for quality {quality}: {psnr:.2f} dB, Size: {encoded_data_size} bytes')
+    
+    return psnrs, sizes
+
+def calculate_psnr(original_image, compressed_image):
+    mse = np.mean((original_image - compressed_image) ** 2)
+    if mse == 0:
+        return float('inf')
+    max_pixel = 255.0
+    psnr = 20 * np.log10(max_pixel / np.sqrt(mse))
+    return psnr
+
+# Example usage
+quality_levels = [10, 30, 50, 70, 90, 100]
+psnrs, sizes = test_custom_jpeg_compression('pictures/parrots.bmp', quality_levels)
 
